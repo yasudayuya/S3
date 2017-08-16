@@ -299,8 +299,14 @@ internal extension S3 {
         }
 
         let schema = isSecure ? "https://" : "http://"
-        var url = URL(string: "\(schema)\(host)/\(bucket!)")!
+        var url = URL(string: "\(schema)\(host):\(port)/\(bucket!)")!
         url.appendPathComponent(fileName)
         return url
+    }
+
+    internal func changeConnect(host: String, port: Int, isSecure: Bool) {
+        self.host = host
+        self.port = port
+        self.isSecure = isSecure
     }
 }
