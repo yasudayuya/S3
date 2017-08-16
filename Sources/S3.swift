@@ -17,6 +17,7 @@ import MimeLib
 /**
  Available access control list values for "x-amz-acl" header as specified in AWS documentation
  */
+
 public enum AccessControlList: String {
     case privateAccess = "private"
     case publicRead = "public-read"
@@ -30,6 +31,7 @@ public enum AccessControlList: String {
 /**
  Error messages
  */
+
 public enum Error: Swift.Error {
     case missingCredentials(String)
     case invalidUrl
@@ -46,26 +48,32 @@ public enum Error: Swift.Error {
 /**
  Main S3 class
  */
+
 public class S3 {
-    
+
     /**
      If set, this bucket name value will be used globally unless overriden by a specific call
      */
     public var bucketName: String?
-    
+
     /**
      S3 Signer class (https://github.com/JustinM1/S3SignerAWS)
      */
     let signer: S3SignerAWS
 
     let client: ClientFactoryProtocol
-    
-    
+
+    var port = 80
+
+    var host = "s3.amazonaws.com"
+
+    var isSecure = true
+
     // MARK: Initialization
-    
+
     /**
      Basic initialization method, uses Config/s3.json to configure connections
-     
+
      - Parameters:
      - droplet: Droplet variable from main.swift
      - bucketName: Name of the global bucket to be used for calls where bucket is not specified (optional)
@@ -74,11 +82,11 @@ public class S3 {
         guard let accessKey: String = drop.config["s3", "accessKey"]?.string else {
             throw Error.missingCredentials("accessKey")
         }
-        
+
         guard let secretKey: String = drop.config["s3", "secretKey"]?.string else {
             throw Error.missingCredentials("secretKey")
         }
-        
+
         if let regionString: String = drop.config["s3", "region"]?.string {
             guard let region = Region(rawValue: regionString) else {
                 throw Error.missingCredentials("region")
@@ -87,18 +95,17 @@ public class S3 {
         } else {
             self.init(droplet: drop, accessKey: accessKey, secretKey: secretKey)
         }
-        
+
         if let bucket: String = drop.config["s3", "bucket"]?.string {
             self.bucketName = bucket
-        }
-        else {
+        } else {
             self.bucketName = bucketName
         }
     }
-    
+
     /**
      Initialization method with custom connection and bucket config
-     
+
      - Parameters:
      - accessKey: AWS Access key
      - secretKey: AWS Secret key
@@ -110,10 +117,10 @@ public class S3 {
         self.bucketName = bucketName
         self.signer = S3SignerAWS(accessKey: accessKey, secretKey: secretKey, region: region)
     }
-    
+
     /**
      Initialization method with custom connection config
-     
+
      - Parameters:
      - accessKey: AWS Access key
      - secretKey: AWS Secret key
@@ -122,12 +129,19 @@ public class S3 {
     public convenience init(droplet drop: Droplet, accessKey: String, secretKey: String, region: Region = .usEast1_Virginia) {
         self.init(droplet: drop, accessKey: accessKey, secretKey: secretKey, bucketName: nil, region: region)
     }
-    
+
+    // 呼び出し元でDropletを生成しない
+    public convenience init(accessKey: String, secretKey: String, bucketName: String, region: Region) throws {
+        let droplet = try Droplet()
+        self.init(droplet: droplet, accessKey: accessKey, secretKey: secretKey, region: region)
+        self.bucketName = bucketName
+    }
+
     // MARK: Managing objects
-    
+
     /**
      Upload file to S3, full set
-     
+
      - Parameters:
      - data: File data
      - filePath: Path to a file within the bucket (image.jpg)
@@ -140,7 +154,7 @@ public class S3 {
         guard let url = fileUrl else {
             throw Error.invalidUrl
         }
-        
+
         let bytes = data.makeBytes()
         var awsHeaders: [String: String] = headers
         awsHeaders["x-amz-acl"] = accessControl.rawValue
@@ -152,10 +166,10 @@ public class S3 {
             throw Error.badResponse(result)
         }
     }
-    
+
     /**
      Upload file to S3, no headers
-     
+
      - Parameters:
      - data: File data
      - filePath: Path to a file within the bucket (image.jpg)
@@ -165,10 +179,10 @@ public class S3 {
     public func put(data: Data, filePath: String, bucketName: String, accessControl: AccessControlList = .privateAccess) throws {
         try self.put(data: data, filePath: filePath, bucketName: bucketName, headers: [:], accessControl: accessControl)
     }
-    
+
     /**
      Upload file to S3, with content type (mime)
-     
+
      - Parameters:
      - data: File data
      - filePath: Path to a file within the bucket (image.jpg)
@@ -179,10 +193,10 @@ public class S3 {
     public func put(data: Data, filePath: String, bucketName: String, contentType: String, accessControl: AccessControlList = .privateAccess) throws {
         try self.put(data: data, filePath: filePath, bucketName: bucketName, headers: ["Content-Type": contentType], accessControl: accessControl)
     }
-    
+
     /**
      Upload file to S3, basic settings
-     
+
      - Parameters:
      - data: File data
      - filePath: Path to a file within the bucket (image.jpg)
@@ -194,30 +208,30 @@ public class S3 {
         }
         try self.put(data: data, filePath: filePath, bucketName: bucketName, accessControl: accessControl)
     }
-    
+
     /**
      Retrieve file data from S3
-     
+
      - Parameters:
      - fileAtPath: Path to a file within the bucket (images/image.jpg)
      - bucketName: Name of the bucket to be used (global bucket value will be ignored, optional)
-     
+
      - Returns: File data
      */
     public func get(fileAtPath filePath: String, bucketName: String? = nil) throws -> Data {
         let fileUrl: URL? = try self.buildUrl(bucketName: bucketName, fileName: filePath)
-        
+
         guard let url = fileUrl else {
             throw Error.invalidUrl
         }
-        
+
         let headers: [String: String] = try signer.authHeaderV4(httpMethod: .get, urlString: url.absoluteString, headers: [:], payload: .none)
         let result: Response = try client.get(url.absoluteString, query: [:], vaporHeaders(headers))
-        
+
         if result.status == .notFound {
             throw Error.notFound
         }
-        
+
         guard result.status == .ok else {
             throw Error.badResponse(result)
         }
@@ -225,15 +239,15 @@ public class S3 {
         guard let bytes: Bytes = result.body.bytes else {
             throw Error.missingData
         }
-        
+
         let data: Data = Data.init(bytes: bytes)
-        
+
         return data
     }
-    
+
     /**
      Delete file from S3
-     
+
      - Parameters:
      - fileAtPath: Path to a file within the bucket (images/image.jpg)
      - bucketName: Name of the bucket to be used (global bucket value will be ignored, optional)
@@ -243,38 +257,38 @@ public class S3 {
         guard let url = fileUrl else {
             throw Error.invalidUrl
         }
-        
+
         let headers: [String: String] = try signer.authHeaderV4(httpMethod: .delete, urlString: url.absoluteString, headers: [:], payload: .none)
-        
+
         let result = try client.delete(url.absoluteString, query: [:], vaporHeaders(headers), Body(""))
-        
+
         guard result.status == .noContent || result.status == .ok else {
             throw Error.badResponse(result)
         }
     }
-    
+
 }
 
 // MARK: - Helper methods
 
 internal extension S3 {
-    
+
     internal func mimeType(forFileAtUrl url: URL) -> String {
         guard let mime: String = Mime.string(forUrl: url) else {
             return "application/octet-stream"
         }
         return mime
     }
-    
-    internal func vaporHeaders(_ headers: [String: String]) -> [HeaderKey : String] {
-        var vaporHeaders: [HeaderKey : String] = [:]
+
+    internal func vaporHeaders(_ headers: [String: String]) -> [HeaderKey: String] {
+        var vaporHeaders: [HeaderKey: String] = [:]
         for header in headers {
             let hk = HeaderKey(header.key)
             vaporHeaders[hk] = header.value
         }
         return vaporHeaders
     }
-    
+
     internal func buildUrl(bucketName: String?, fileName: String) throws -> URL? {
         var bucket: String? = bucketName
         if bucket == nil {
@@ -283,10 +297,10 @@ internal extension S3 {
         guard bucket != nil else {
             throw Error.missingBucketName
         }
-        
-        var url: URL = URL(string: "https://\(bucket!).s3.amazonaws.com")!
+
+        let schema = isSecure ? "https://" : "http://"
+        var url = URL(string: "\(schema)\(host)/\(bucket!)")!
         url.appendPathComponent(fileName)
         return url
     }
-    
 }
