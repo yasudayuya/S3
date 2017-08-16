@@ -267,6 +267,12 @@ public class S3 {
         }
     }
 
+    public func changeConnect(host: String, port: Int, isSecure: Bool) {
+        self.host = host
+        self.port = port
+        self.isSecure = isSecure
+    }
+
 }
 
 // MARK: - Helper methods
@@ -302,11 +308,5 @@ internal extension S3 {
         var url = URL(string: "\(schema)\(host):\(port)/\(bucket!)")!
         url.appendPathComponent(fileName)
         return url
-    }
-
-    internal func changeConnect(host: String, port: Int, isSecure: Bool) {
-        self.host = host
-        self.port = port
-        self.isSecure = isSecure
     }
 }
